@@ -1,0 +1,7 @@
+forge verify-contract 0x9C0773Ed02EC78d38408ca8b8E478280B07ddb43 src/Sheepy404.sol:Sheepy404 --zksync --verifier etherscan --verifier-url "https://api-sepolia.abscan.org/api" --etherscan-api-key IEYKU3EEM5XCD76N7Y7HF9HG7M9ARZ2H4A
+forge verify-contract 0x0056DF5136D53dE52014Fe303c43a92cdA5D0377 src/Sheepy404Mirror.sol:Sheepy404Mirror --zksync --verifier etherscan --verifier-url "https://api-sepolia.abscan.org/api" --etherscan-api-key IEYKU3EEM5XCD76N7Y7HF9HG7M9ARZ2H4A
+forge verify-contract 0x39D25887C6EEEef56345954b7E71e06826B35795 src/SheepySale.sol:SheepySale --zksync --verifier etherscan --verifier-url "https://api-sepolia.abscan.org/api" --etherscan-api-key IEYKU3EEM5XCD76N7Y7HF9HG7M9ARZ2H4A
+
+forge verify-contract 0x9C0773Ed02EC78d38408ca8b8E478280B07ddb43 src/Sheepy404.sol:Sheepy404 --zksync --verifier zksync --verifier-url "https://api-explorer-verify.testnet.abs.xyz/contract_verification"
+forge verify-contract 0x0056DF5136D53dE52014Fe303c43a92cdA5D0377 src/Sheepy404Mirror.sol:Sheepy404Mirror --zksync --verifier zksync --verifier-url "https://api-explorer-verify.testnet.abs.xyz/contract_verification"
+forge verify-contract 0x39D25887C6EEEef56345954b7E71e06826B35795 src/SheepySale.sol:SheepySale --zksync --verifier zksync --verifier-url "https://api-explorer-verify.testnet.abs.xyz/contract_verification"
