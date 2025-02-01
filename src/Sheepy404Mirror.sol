@@ -9,5 +9,5 @@ contract Sheepy404Mirror is DN404Mirror {
     /*                        CONSTRUCTOR                         */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
-    constructor() DN404Mirror(msg.sender) {}
+    constructor(address _initialDeployer) DN404Mirror(_initialDeployer) {}
 }

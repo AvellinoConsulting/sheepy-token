@@ -2,6 +2,7 @@
 pragma solidity ^0.8.4;
 
 import {SheepyBase} from "./SheepyBase.sol";
+import {Sheepy404Mirror} from "./Sheepy404Mirror.sol";
 import {DN404} from "dn404/src/DN404.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
@@ -49,11 +50,16 @@ contract Sheepy404 is DN404, SheepyBase {
     function initialize(
         address initialOwner,
         address initialAdmin,
-        address mirror,
+        string memory name_,
+        string memory symbol_,
+        address _initialDeployer,
         string memory notSoSecret
     ) public virtual {
         uint256 initialSupply = 1_000_000_000 * 10 ** 18;
+        _name = name_;
+        _symbol = symbol_;
         _initializeSheepyBase(initialOwner, initialAdmin, notSoSecret);
+        address mirror = address(new Sheepy404Mirror(_initialDeployer));
         _initializeDN404(initialSupply, initialOwner, mirror);
     }
 
@@ -79,15 +85,17 @@ contract Sheepy404 is DN404, SheepyBase {
             result = LibString.replace(baseURI, "{id}", LibString.toString(id));
         }
     }
-
+   
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           REVEAL                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
     /// @dev Allows the owner of the NFTs to pay to reveal the `tokenIds`.
     /// A NFT can be re-revealed even if it has been revealed.
-    function reveal(uint256[] memory tokenIds) public payable virtual {
-        require(msg.value == revealPrice * tokenIds.length, "Wrong payment.");
+    function reveal(uint256[] memory tokenIds) public virtual {
+        uint256 totalCost = revealPrice * tokenIds.length;
+        require(balanceOf(msg.sender) >= totalCost, "Insufficient balance");
+        _transfer(msg.sender, address(this), totalCost);
         for (uint256 i; i < tokenIds.length; ++i) {
             uint256 id = tokenIds.get(i);
             require(_callerIsAuthorizedFor(id), "Unauthorized.");
@@ -138,6 +146,11 @@ contract Sheepy404 is DN404, SheepyBase {
         revealPrice = newRevealPrice;
     }
 
+    /// @dev mint token function
+    function mint(address to, uint256 amount) public onlyOwnerOrRole(ADMIN_ROLE) {
+        _mint(to, amount);
+    }
+
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                      INTERNAL HELPERS                      */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
@@ -158,7 +171,7 @@ contract Sheepy404 is DN404, SheepyBase {
 
     /// @dev 100k full ERC20 tokens for 1 ERC721 NFT.
     function _unit() internal view virtual override returns (uint256) {
-        return 100_000 * 10 ** 18;
+        return 10 * 10 ** 18;
     }
 
     /// @dev Hook that is called after a batch of NFT transfers.
