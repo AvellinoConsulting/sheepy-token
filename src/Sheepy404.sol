@@ -13,6 +13,13 @@ contract Sheepy404 is DN404, SheepyBase {
     using DynamicArrayLib for *;
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
+    /*                           ERRORS                           */
+    /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
+
+    // Error for URI already assigned
+    error URIAlreadyAssigned();
+
+    /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           EVENTS                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
@@ -21,6 +28,9 @@ contract Sheepy404 is DN404, SheepyBase {
 
     /// @dev Emitted when `tokenId` is transferred and the metadata should be reset.
     event Reset(uint256 indexed tokenId);
+
+    /// @dev Emitted when `tokenId` is rerolled.
+    event Reroll(uint256 indexed tokenId);
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                          STORAGE                           */
@@ -40,6 +50,16 @@ contract Sheepy404 is DN404, SheepyBase {
 
     /// @dev How much native currency required to reveal a token.
     uint256 public revealPrice;
+
+    /// @dev How much native currency required to reroll a token.
+    uint256 public rerollPrice;
+
+    // Mapping from token ID to URI ID
+    mapping(uint256 => uint256) private _tokenURIs;
+
+    // Mapping to track assigned URI IDs
+    mapping(uint256 => bool) private _assignedURIs;
+
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                        INITIALIZER                         */
@@ -71,12 +91,27 @@ contract Sheepy404 is DN404, SheepyBase {
         return _symbol;
     }
 
+    // Function to set the URI ID for a token ID
+    function _setTokenURI(uint256 tokenId, uint256 uriId) internal virtual {
+        if (!_exists(tokenId)) revert TokenDoesNotExist();
+        if (_assignedURIs[uriId]) revert URIAlreadyAssigned();
+        _tokenURIs[tokenId] = uriId;
+        _assignedURIs[uriId] = true;
+    }
+
+    // Function to check if a URI ID is already assigned
+    function isURIIdAssigned(uint256 uriId) public view returns (bool) {
+        return _assignedURIs[uriId];
+    }
+
+
     /// @dev Returns the token URI.
-    function _tokenURI(uint256 id) internal view virtual override returns (string memory result) {
-        if (!_exists(id)) revert TokenDoesNotExist();
+    function _tokenURI(uint256 tokenId) internal view virtual override returns (string memory result) {
+        if (!_exists(tokenId)) revert TokenDoesNotExist();
         string memory baseURI = _baseURI;
+        uint256 uriId = _tokenURIs[tokenId];
         if (bytes(baseURI).length != 0) {
-            result = LibString.replace(baseURI, "{id}", LibString.toString(id));
+            result = LibString.replace(baseURI, "{id}", LibString.toString(uriId));
         }
     }
 
@@ -84,15 +119,43 @@ contract Sheepy404 is DN404, SheepyBase {
     /*                           REVEAL                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
-    /// @dev Allows the owner of the NFTs to pay to reveal the `tokenIds`.
+    /// @dev Allows the owner of the NFTs to pay to reveal the `tokenIds` and `uriIds`.
     /// A NFT can be re-revealed even if it has been revealed.
-    function reveal(uint256[] memory tokenIds) public payable virtual {
-        require(msg.value == revealPrice * tokenIds.length, "Wrong payment.");
+    function reveal(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
+        require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
+        uint256 totalCost = revealPrice * tokenIds.length;
+        require(balanceOf(msg.sender) >= totalCost, "Insufficient balance.");
+        transferFrom(msg.sender, address(this), totalCost);
         for (uint256 i; i < tokenIds.length; ++i) {
-            uint256 id = tokenIds.get(i);
-            require(_callerIsAuthorizedFor(id), "Unauthorized.");
-            _revealed.set(id);
-            emit Reveal(id);
+            uint256 tokenId = tokenIds[i];
+            uint256 uriId = uriIds[i];
+            require(_callerIsAuthorizedFor(tokenId), "Unauthorized.");
+            require(!isURIIdAssigned(uriId), "URI ID already assigned.");
+            _setTokenURI(tokenId, uriId);
+            _revealed.set(tokenId);
+            emit Reveal(tokenId);
+        }
+    }
+
+
+    /// @dev Allows the owner of the NFTs to pay to reroll the `tokenIds` and `uriIds`.
+    /// A NFT can be rerolled even if it has been revealed.
+    function reroll(uint256[] memory tokenIds, uint256[] memory uriIds) public payable virtual {
+        require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
+        require(msg.value == rerollPrice * tokenIds.length, "Wrong payment.");
+        for (uint256 i; i < tokenIds.length; ++i) {
+            uint256 tokenId = tokenIds[i];
+            uint256 uriId = uriIds[i];
+            require(_callerIsAuthorizedFor(tokenId), "Unauthorized.");
+            require(!isURIIdAssigned(uriId), "URI ID already assigned.");
+            
+            // Unassign the previous URI ID
+            uint256 previousUriId = _tokenURIs[tokenId];
+            _assignedURIs[previousUriId] = false;
+
+            // Assign the new URI ID
+            _setTokenURI(tokenId, uriId);
+            emit Reroll(tokenId);
         }
     }
 
