@@ -24,13 +24,13 @@ contract Sheepy404 is DN404, SheepyBase {
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
     /// @dev Emitted when `tokenId` is revealed.
-    event Reveal(uint256 indexed tokenId);
+    event Reveal(uint256 indexed tokenId, uint256 indexed uriId);
 
     /// @dev Emitted when `tokenId` is transferred and the metadata should be reset.
     event Reset(uint256 indexed tokenId);
 
     /// @dev Emitted when `tokenId` is rerolled.
-    event Reroll(uint256 indexed tokenId);
+    event Reroll(uint256 indexed tokenId, uint256 indexed oldUriId, uint256 indexed newUriId);
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                          STORAGE                           */
@@ -124,7 +124,10 @@ contract Sheepy404 is DN404, SheepyBase {
     function reveal(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
         uint256 totalCost = revealPrice * tokenIds.length;
-        require(balanceOf(msg.sender) >= totalCost, "Insufficient balance.");
+        uint256 userBalance = balanceOf(msg.sender);
+        uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
+        uint256 tokensNeededToRetainNFT = numOfOwnedTokens * _unit();
+        require((userBalance - tokensNeededToRetainNFT) >= totalCost, "Insufficient balance.");
         transferFrom(msg.sender, address(this), totalCost);
         for (uint256 i; i < tokenIds.length; ++i) {
             uint256 tokenId = tokenIds[i];
@@ -133,16 +136,21 @@ contract Sheepy404 is DN404, SheepyBase {
             require(!isURIIdAssigned(uriId), "URI ID already assigned.");
             _setTokenURI(tokenId, uriId);
             _revealed.set(tokenId);
-            emit Reveal(tokenId);
+            emit Reveal(tokenId, uriId);
         }
     }
 
 
     /// @dev Allows the owner of the NFTs to pay to reroll the `tokenIds` and `uriIds`.
     /// A NFT can be rerolled even if it has been revealed.
-    function reroll(uint256[] memory tokenIds, uint256[] memory uriIds) public payable virtual {
+    function reroll(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
-        require(msg.value == rerollPrice * tokenIds.length, "Wrong payment.");
+        uint256 totalCost = rerollPrice * tokenIds.length;
+        uint256 userBalance = balanceOf(msg.sender);
+        uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
+        uint256 tokensNeededToRetainNFT = numOfOwnedTokens * _unit();
+        require((userBalance - tokensNeededToRetainNFT) >= totalCost, "Insufficient balance.");
+        transferFrom(msg.sender, address(this), totalCost);
         for (uint256 i; i < tokenIds.length; ++i) {
             uint256 tokenId = tokenIds[i];
             uint256 uriId = uriIds[i];
@@ -155,7 +163,7 @@ contract Sheepy404 is DN404, SheepyBase {
 
             // Assign the new URI ID
             _setTokenURI(tokenId, uriId);
-            emit Reroll(tokenId);
+            emit Reroll(tokenId, previousUriId, uriId);
         }
     }
 
