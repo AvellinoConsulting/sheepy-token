@@ -104,6 +104,10 @@ contract Sheepy404 is DN404, SheepyBase {
         return _assignedURIs[uriId];
     }
 
+    /// @dev Returns the default mode for the skip NFT status.
+    function _skipNFTDefault() internal view override returns (SkipNFTDefault) {
+        return SkipNFTDefault.Off;
+    }
 
     /// @dev Returns the token URI.
     function _tokenURI(uint256 tokenId) internal view virtual override returns (string memory result) {
@@ -111,7 +115,11 @@ contract Sheepy404 is DN404, SheepyBase {
         string memory baseURI = _baseURI;
         uint256 uriId = _tokenURIs[tokenId];
         if (bytes(baseURI).length != 0) {
-            result = LibString.replace(baseURI, "{id}", LibString.toString(uriId));
+            if (uriId == 0) {
+                result = "";
+            } else {
+                result = LibString.replace(baseURI, "{id}", LibString.toString(uriId));
+            }
         }
     }
 
@@ -123,6 +131,10 @@ contract Sheepy404 is DN404, SheepyBase {
     /// A NFT can be re-revealed even if it has been revealed.
     function reveal(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
+        bool[] memory revealedTokens = revealed(tokenIds);
+        for (uint256 i = 0; i < revealedTokens.length; i++) {
+            require(!revealedTokens[i], "Already revealed.");
+        }
         uint256 totalCost = revealPrice * tokenIds.length;
         uint256 userBalance = balanceOf(msg.sender);
         uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
