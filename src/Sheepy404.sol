@@ -221,6 +221,10 @@ contract Sheepy404 is DN404, SheepyBase {
         revealPrice = newRevealPrice;
     }
 
+    /// @dev Sets the reroll price.
+    function setRerollPrice(uint256 newRerollPrice) public onlyOwnerOrRole(ADMIN_ROLE) {
+        rerollPrice = newRerollPrice;
+    }
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                      INTERNAL HELPERS                      */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
