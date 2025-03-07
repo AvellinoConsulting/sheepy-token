@@ -18,19 +18,21 @@ contract Sheepy404 is DN404, SheepyBase {
 
     // Error for URI already assigned
     error URIAlreadyAssigned();
+    // Error for token not revealed
+    error TokenNotRevealed();
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           EVENTS                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
-    /// @dev Emitted when `tokenId` is revealed.
-    event Reveal(uint256 indexed tokenId, uint256 indexed uriId);
+    /// @dev Emitted when `tokenIds` is revealed.
+    event RevealBatch(uint256[] indexed tokenIds, uint256[] indexed uriIds);
 
     /// @dev Emitted when `tokenId` is transferred and the metadata should be reset.
     event Reset(uint256 indexed tokenId);
 
-    /// @dev Emitted when `tokenId` is rerolled.
-    event Reroll(uint256 indexed tokenId, uint256 indexed oldUriId, uint256 indexed newUriId);
+    /// @dev Emitted when `tokenIds` is rerolled.
+    event RerollBatch(uint256[] indexed tokenIds, uint256[] indexed uriIds);
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                          STORAGE                           */
@@ -51,6 +53,9 @@ contract Sheepy404 is DN404, SheepyBase {
     /// @dev How much native currency required to reveal a token.
     uint256 public revealPrice;
 
+    /// @dev The address of the fee collector.
+    address public feeCollector;
+
     /// @dev How much native currency required to reroll a token.
     uint256 public rerollPrice;
 
@@ -60,6 +65,11 @@ contract Sheepy404 is DN404, SheepyBase {
     // Mapping to track assigned URI IDs
     mapping(uint256 => bool) private _assignedURIs;
 
+    // Mapping to track reveal count for each token ID
+    mapping(uint256 => uint256) private _revealCounts;
+
+    // Mapping to track reroll count for each token ID
+    mapping(uint256 => uint256) private _rerollCounts;
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                        INITIALIZER                         */
@@ -127,56 +137,120 @@ contract Sheepy404 is DN404, SheepyBase {
     /*                           REVEAL                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
-    /// @dev Allows the owner of the NFTs to pay to reveal the `tokenIds` and `uriIds`.
-    /// A NFT can be re-revealed even if it has been revealed.
-    function reveal(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
+    /**
+    * @notice Reveals the URIs for a batch of tokens.
+    * @dev This function allows the caller to reveal the URIs for multiple tokens in a single transaction.
+    * It checks for various conditions such as token existence, authorization, and sufficient balance before proceeding.
+    * The function also ensures that the state is updated before any external calls are made.
+    * @param tokenIds An array of token IDs to be revealed.
+    * @param uriIds An array of URI IDs corresponding to the token IDs.
+    * @dev Requirements:
+    * - `tokenIds` and `uriIds` must have the same length.
+    * - `tokenIds` array must not be empty.
+    * - Each token ID must not have been revealed already.
+    * - Caller must have sufficient balance to cover the total cost of revealing the tokens.
+    * - Caller must be authorized to reveal each token ID.
+    * - Each URI ID must not be already assigned.
+    * - Each token ID must exist.
+    * @dev Emits:
+    * - A {RevealBatch} event upon successful execution.
+    */
+    function reveal(uint256[] calldata tokenIds, uint256[] calldata uriIds) external virtual {
+        require(tokenIds.length > 0, "Token IDs array is empty.");
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
-        bool[] memory revealedTokens = revealed(tokenIds);
-        for (uint256 i = 0; i < revealedTokens.length; i++) {
-            require(!revealedTokens[i], "Already revealed.");
+
+        uint256 totalCost = 0;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            if (_revealed.get(tokenId)) revert URIAlreadyAssigned();
+            uint256 revealCount = _revealCounts[tokenId];
+            uint256 costMultiplier = revealCount == 0 ? 0 : (revealCount < 3 ? revealCount : 3);
+            totalCost += revealPrice * costMultiplier;
         }
-        uint256 totalCost = revealPrice * tokenIds.length;
+
         uint256 userBalance = balanceOf(msg.sender);
         uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
         uint256 tokensNeededToRetainNFT = numOfOwnedTokens * _unit();
-        require((userBalance - tokensNeededToRetainNFT) >= totalCost, "Insufficient balance.");
-        transferFrom(msg.sender, address(this), totalCost);
-        for (uint256 i; i < tokenIds.length; ++i) {
+        if ((userBalance - tokensNeededToRetainNFT) < totalCost) revert InsufficientBalance();
+
+        for (uint256 i = 0; i < tokenIds.length; i++) {
             uint256 tokenId = tokenIds[i];
             uint256 uriId = uriIds[i];
-            require(_callerIsAuthorizedFor(tokenId), "Unauthorized.");
-            require(!isURIIdAssigned(uriId), "URI ID already assigned.");
+
+            if (!_callerIsAuthorizedFor(tokenId)) revert Unauthorized();
+            if (isURIIdAssigned(uriId)) revert URIAlreadyAssigned();
+            if (!_exists(tokenId)) revert TokenDoesNotExist();
+
             _setTokenURI(tokenId, uriId);
             _revealed.set(tokenId);
-            emit Reveal(tokenId, uriId);
+            _revealCounts[tokenId] += 1;
         }
+
+        // Interactions: Transfer fees after state updates
+        transfer(feeCollector, totalCost);
+
+        emit RevealBatch(tokenIds, uriIds);
     }
 
+    /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
+    /*                           REVEAL                           */
+    /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
-    /// @dev Allows the owner of the NFTs to pay to reroll the `tokenIds` and `uriIds`.
-    /// A NFT can be rerolled even if it has been revealed.
-    function reroll(uint256[] memory tokenIds, uint256[] memory uriIds) public virtual {
+    /**
+    * @dev Allows the owner of the NFTs to pay to reroll the `tokenIds` and `uriIds`.
+    * @notice This function enables the caller to reroll the URIs of multiple tokens.
+    * @param tokenIds An array of token IDs to reroll.
+    * @param uriIds An array of new URI IDs to assign to the tokens.
+    * @dev Requirements:
+    * - The `tokenIds` array must not be empty.
+    * - The lengths of `tokenIds` and `uriIds` arrays must match.
+    * - The caller must have a sufficient balance to cover the total reroll cost.
+    * - Each token ID must exist.
+    * - The caller must be authorized to modify each token ID.
+    * - Each new URI ID must not already be assigned.
+    * - Each token ID must have been revealed (i.e., have an assigned URI).
+    * @dev Effects:
+    * - Updates the URI of each token ID and increments its reroll count.
+    * - Transfers the total reroll cost to the fee collector.
+    * @dev Emits:
+    * - `RerollBatch` event when the URIs of multiple tokens are successfully rerolled.
+    */
+    function reroll(uint256[] calldata tokenIds, uint256[] calldata uriIds) external virtual {
+        require(tokenIds.length > 0, "Token IDs array is empty.");
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
-        uint256 totalCost = rerollPrice * tokenIds.length;
+
+        uint256 totalCost = 0;
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            uint256 rerollCount = _rerollCounts[tokenId];
+            uint256 costMultiplier = rerollCount < 2 ? rerollCount + 1 : 3;
+            totalCost += rerollPrice * costMultiplier;
+        }
+
         uint256 userBalance = balanceOf(msg.sender);
         uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
         uint256 tokensNeededToRetainNFT = numOfOwnedTokens * _unit();
         require((userBalance - tokensNeededToRetainNFT) >= totalCost, "Insufficient balance.");
-        transferFrom(msg.sender, address(this), totalCost);
-        for (uint256 i; i < tokenIds.length; ++i) {
+
+        for (uint256 i = 0; i < tokenIds.length; i++) {
             uint256 tokenId = tokenIds[i];
             uint256 uriId = uriIds[i];
-            require(_callerIsAuthorizedFor(tokenId), "Unauthorized.");
-            require(!isURIIdAssigned(uriId), "URI ID already assigned.");
-            
-            // Unassign the previous URI ID
+
+            if (!_exists(tokenId)) revert TokenDoesNotExist();
+            if (!_callerIsAuthorizedFor(tokenId)) revert Unauthorized();
+            if (isURIIdAssigned(uriId)) revert URIAlreadyAssigned();
+            if (!isURIIdAssigned(_tokenURIs[tokenId])) revert TokenNotRevealed();
+
             uint256 previousUriId = _tokenURIs[tokenId];
             _assignedURIs[previousUriId] = false;
 
-            // Assign the new URI ID
             _setTokenURI(tokenId, uriId);
-            emit Reroll(tokenId, previousUriId, uriId);
+            _rerollCounts[tokenId] += 1;
         }
+
+        transfer(feeCollector, totalCost);
+
+        emit RerollBatch(tokenIds, uriIds);
     }
 
     /// @dev Returns if each of the `tokenIds` has been revealed.
@@ -225,6 +299,11 @@ contract Sheepy404 is DN404, SheepyBase {
     function setRerollPrice(uint256 newRerollPrice) public onlyOwnerOrRole(ADMIN_ROLE) {
         rerollPrice = newRerollPrice;
     }
+
+    /// @dev Sets the fee collector.
+    function setFeeCollector(address newFeeCollector) public onlyOwnerOrRole(ADMIN_ROLE) {
+        feeCollector = newFeeCollector;
+    }
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                      INTERNAL HELPERS                      */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
@@ -258,10 +337,16 @@ contract Sheepy404 is DN404, SheepyBase {
         // Emit a {Reset} event for each id if the caller isn't the mirror.
         if (msg.sender != _getDN404Storage().mirrorERC721) {
             for (uint256 i; i < ids.length; ++i) {
+                uint256 id = ids.get(i);
                 if (from.toUint256Array().get(i) != to.toUint256Array().get(i)) {
-                    uint256 id = ids.get(i);
                     _revealed.unset(id);
                     emit Reset(id);
+                }
+
+                if (to.toUint256Array().get(i) == 0) {
+                    uint256 uriId = _tokenURIs[id];
+                    _assignedURIs[uriId] = false;
+                    delete _tokenURIs[id];
                 }
             }
         }

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Set your environment variables
-RPC_URL="your_rpc_url_here"
-PRIVATE_KEY="your_private_key_here"
+RPC_URL="https://api.testnet.abs.xyz"
+PRIVATE_KEY="0x5a47de970be76260b4ddea9e4e4f4c4ef6344001ebb6b52d96205ad11d7916fd"
 
 # Initialize deployer address
 DEPLOYER_ADDRESS="0x86ee94AF5aBB6E2f7073F3B2d0caecA5049F088b"
