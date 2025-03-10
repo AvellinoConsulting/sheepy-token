@@ -20,6 +20,8 @@ contract Sheepy404 is DN404, SheepyBase {
     error URIAlreadyAssigned();
     // Error for token not revealed
     error TokenNotRevealed();
+    // Error for token ID already revealed
+    error TokenIdAlreadyRevealed(uint256 tokenId);
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           EVENTS                           */
@@ -64,9 +66,6 @@ contract Sheepy404 is DN404, SheepyBase {
 
     // Mapping to track assigned URI IDs
     mapping(uint256 => bool) private _assignedURIs;
-
-    // Mapping to track reveal count for each token ID
-    mapping(uint256 => uint256) private _revealCounts;
 
     // Mapping to track reroll count for each token ID
     mapping(uint256 => uint256) private _rerollCounts;
@@ -115,8 +114,22 @@ contract Sheepy404 is DN404, SheepyBase {
     }
 
     /// @dev Returns the default mode for the skip NFT status.
-    function _skipNFTDefault() internal view override returns (SkipNFTDefault) {
+    function _skipNFTDefault() internal pure override returns (SkipNFTDefault) {
         return SkipNFTDefault.Off;
+    }
+
+    /**
+    * @dev Calculates the total reroll cost for an array of token IDs.
+    * @param tokenIds An array of token IDs for which to calculate the reroll cost.
+    * @return totalCost The total cost required to reroll the given token IDs.
+    */
+    function calculateRerollCost(uint256[] calldata tokenIds) public view returns (uint256 totalCost) {
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            uint256 rerollCount = _rerollCounts[tokenId];
+            uint256 costMultiplier = rerollCount < 2 ? rerollCount + 1 : 3;
+            totalCost += rerollPrice * costMultiplier;
+        }
     }
 
     /// @dev Returns the token URI.
@@ -159,22 +172,10 @@ contract Sheepy404 is DN404, SheepyBase {
         require(tokenIds.length > 0, "Token IDs array is empty.");
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
 
-        uint256 totalCost = 0;
         for (uint256 i = 0; i < tokenIds.length; i++) {
             uint256 tokenId = tokenIds[i];
-            if (_revealed.get(tokenId)) revert URIAlreadyAssigned();
-            uint256 revealCount = _revealCounts[tokenId];
-            uint256 costMultiplier = revealCount == 0 ? 0 : (revealCount < 3 ? revealCount : 3);
-            totalCost += revealPrice * costMultiplier;
-        }
+            if (_revealed.get(tokenId)) revert TokenIdAlreadyRevealed(tokenId);
 
-        uint256 userBalance = balanceOf(msg.sender);
-        uint256 numOfOwnedTokens = _balanceOfNFT(msg.sender);
-        uint256 tokensNeededToRetainNFT = numOfOwnedTokens * _unit();
-        if ((userBalance - tokensNeededToRetainNFT) < totalCost) revert InsufficientBalance();
-
-        for (uint256 i = 0; i < tokenIds.length; i++) {
-            uint256 tokenId = tokenIds[i];
             uint256 uriId = uriIds[i];
 
             if (!_callerIsAuthorizedFor(tokenId)) revert Unauthorized();
@@ -183,17 +184,13 @@ contract Sheepy404 is DN404, SheepyBase {
 
             _setTokenURI(tokenId, uriId);
             _revealed.set(tokenId);
-            _revealCounts[tokenId] += 1;
         }
-
-        // Interactions: Transfer fees after state updates
-        transfer(feeCollector, totalCost);
 
         emit RevealBatch(tokenIds, uriIds);
     }
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
-    /*                           REVEAL                           */
+    /*                           REROLL                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
 
     /**
