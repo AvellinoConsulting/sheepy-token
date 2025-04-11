@@ -70,6 +70,9 @@ contract Sheepy404 is DN404, SheepyBase {
     // Mapping to track reroll count for each token ID
     mapping(uint256 => uint256) private _rerollCounts;
 
+    // Base URI for unrevealed tokens
+    string public unrevealedBaseURI;
+
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                        INITIALIZER                         */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
@@ -132,14 +135,20 @@ contract Sheepy404 is DN404, SheepyBase {
         }
     }
 
+    /// @dev Returns the URI ID for a token ID.
+    function setUnrevealedBaseUri(string memory uri) public onlyOwnerOrRole(ADMIN_ROLE) {
+        unrevealedBaseURI = uri;
+    }
+
     /// @dev Returns the token URI.
     function _tokenURI(uint256 tokenId) internal view virtual override returns (string memory result) {
         if (!_exists(tokenId)) revert TokenDoesNotExist();
         string memory baseURI = _baseURI;
         uint256 uriId = _tokenURIs[tokenId];
         if (bytes(baseURI).length != 0) {
-            if (uriId == 0) {
-                result = "";
+            if (!_revealed.get(tokenId)) {
+                uint256 unrevealedUriId = (1 + tokenId % 5);
+                result = LibString.replace(unrevealedBaseURI, "{id}", LibString.toString(unrevealedUriId));
             } else {
                 result = LibString.replace(baseURI, "{id}", LibString.toString(uriId));
             }
@@ -335,10 +344,10 @@ contract Sheepy404 is DN404, SheepyBase {
         if (msg.sender != _getDN404Storage().mirrorERC721) {
             for (uint256 i; i < ids.length; ++i) {
                 uint256 id = ids.get(i);
-                if (from.toUint256Array().get(i) != to.toUint256Array().get(i)) {
-                    _revealed.unset(id);
-                    emit Reset(id);
-                }
+                // if (from.toUint256Array().get(i) != to.toUint256Array().get(i)) {
+                //     _revealed.unset(id);
+                //     emit Reset(id);
+                // }
 
                 if (to.toUint256Array().get(i) == 0) {
                     uint256 uriId = _tokenURIs[id];
