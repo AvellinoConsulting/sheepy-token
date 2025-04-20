@@ -14,6 +14,7 @@ libs = ['lib']
 fallback_oz = true
 is_system = false # Note: NonceHolder and the ContractDeployer system contracts can only be called with a special isSystem flag as true
 mode = "3"
+via_ir = true
 
 [fmt]
 line_length = 100 # While we allow up to 120, we lint at 100 for readability.

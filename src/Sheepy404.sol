@@ -6,11 +6,13 @@ import {DN404} from "dn404/src/DN404.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {LibBitmap} from "solady/utils/LibBitmap.sol";
 import {DynamicArrayLib} from "solady/utils/DynamicArrayLib.sol";
+import {ECDSA} from "solady/utils/ECDSA.sol";
 
 /// @dev This contract can be used by itself or as an proxy's implementation.
 contract Sheepy404 is DN404, SheepyBase {
     using LibBitmap for *;
     using DynamicArrayLib for *;
+    using ECDSA for bytes32;
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           ERRORS                           */
@@ -72,6 +74,17 @@ contract Sheepy404 is DN404, SheepyBase {
 
     // Base URI for unrevealed tokens
     string public unrevealedBaseURI;
+
+    // Trusted Signer
+    address public trustedSigner;
+
+    /// @dev Sets the trusted signer.
+    function setTrustedSigner(address newTrustedSigner) public onlyOwnerOrRole(ADMIN_ROLE) {
+        trustedSigner = newTrustedSigner;
+    }
+
+    // User nonce
+    mapping(address => uint256) public userNonce;
 
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                        INITIALIZER                         */
@@ -155,6 +168,19 @@ contract Sheepy404 is DN404, SheepyBase {
         }
     }
 
+    modifier onlyTrustedRequest(uint256[] calldata tokenIds, uint256[] calldata uriIds, uint256 userRequestNonce, uint256 requestExpiry, bytes calldata signature) {
+        require(userNonce[msg.sender] == userRequestNonce, "Invalid nonce.");
+        require(requestExpiry > block.timestamp, "Request expired.");
+
+        bytes32 dataHash = keccak256(abi.encodePacked(tokenIds, uriIds, msg.sender, userRequestNonce, requestExpiry));
+        bytes32 messageHash = dataHash.toEthSignedMessageHash();
+        address signer = messageHash.recover(signature);
+        require(signer != address(0), "Invalid signature.");
+        require(signer == trustedSigner, "Invalid signer.");
+        userNonce[msg.sender]++;
+        _;
+    }
+
     /*«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-«-*/
     /*                           REVEAL                           */
     /*-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»-»*/
@@ -177,7 +203,11 @@ contract Sheepy404 is DN404, SheepyBase {
     * @dev Emits:
     * - A {RevealBatch} event upon successful execution.
     */
-    function reveal(uint256[] calldata tokenIds, uint256[] calldata uriIds) external virtual {
+    function reveal(uint256[] calldata tokenIds,
+                    uint256[] calldata uriIds,
+                    uint256 userRequestNonce,
+                    uint256 requestExpiry,
+                    bytes calldata signature) onlyTrustedRequest(tokenIds, uriIds, userRequestNonce, requestExpiry, signature) external virtual {
         require(tokenIds.length > 0, "Token IDs array is empty.");
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
 
@@ -221,7 +251,11 @@ contract Sheepy404 is DN404, SheepyBase {
     * @dev Emits:
     * - `RerollBatch` event when the URIs of multiple tokens are successfully rerolled.
     */
-    function reroll(uint256[] calldata tokenIds, uint256[] calldata uriIds) external virtual {
+    function reroll(uint256[] calldata tokenIds,
+                    uint256[] calldata uriIds,
+                    uint256 userRequestNonce,
+                    uint256 requestExpiry,
+                    bytes calldata signature) onlyTrustedRequest(tokenIds, uriIds, userRequestNonce, requestExpiry, signature) external virtual {
         require(tokenIds.length > 0, "Token IDs array is empty.");
         require(tokenIds.length == uriIds.length, "Mismatched input lengths.");
 
@@ -348,7 +382,7 @@ contract Sheepy404 is DN404, SheepyBase {
                 //     _revealed.unset(id);
                 //     emit Reset(id);
                 // }
-
+                (from);
                 if (to.toUint256Array().get(i) == 0) {
                     uint256 uriId = _tokenURIs[id];
                     _assignedURIs[uriId] = false;
