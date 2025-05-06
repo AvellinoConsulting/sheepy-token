@@ -124,7 +124,7 @@ contract Sheepy404Test is Test {
         vm.prank(_CHARLIE);
         vm.expectEmit();
         emit Reveal(1);
-        sheepy.reveal{value: _REVEAL_PRICE}(DynamicArrayLib.p(1).asUint256Array());
+        sheepy.reveal(DynamicArrayLib.p(1).asUint256Array(), DynamicArrayLib.p(1).asUint256Array());
         assertEq(_revealed(1), true);
 
         vm.prank(_CHARLIE);
